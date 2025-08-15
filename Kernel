@@ -1,0 +1,93 @@
+FloofOS Kernel (have fun ,make it better and i will accept the pull requests )
+
+kernel.c
+
+#include <stdint.h>
+#include <stddef.h>
+
+__attribute__((section(".multiboot")))
+const unsigned char multiboot_header[] = {
+    0x1BADB002, // Magic number
+    0x00,       // Flags
+    -(0x1BADB002 + 0x00) // Checksum
+};
+
+__attribute__((section(".uefi")))
+const unsigned char uefi_header[] = {
+    0x55AA, // UEFI magic number
+    0x00,   // Flags
+    -(0x55AA + 0x00) // Checksum
+};
+
+extern "C" EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
+    // Initialize framebuffer via GOP
+    EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
+    EFI_STATUS status = SystemTable->BootServices->LocateProtocol(&gEfiGraphicsOutputProtocolGuid, NULL, (void**)&gop);
+    if (EFI_ERROR(status)) return status;
+
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* info = gop->Mode->Info;
+    UINTN framebuffer_size = info->HorizontalResolution * info->VerticalResolution * 4;
+    UINT8* framebuffer = (UINT8*)gop->Mode->FrameBufferBase;
+
+    const char* message = "Welcome to FloofOS!";
+    size_t i = 0;
+    while (message[i] != '\\0') {
+        framebuffer[i * 4] = message[i]; // Simple text rendering
+        i++;
+    }
+
+    return EFI_SUCCESS;
+}
+
+void handle_crash() {
+    // Placeholder crash handler
+    uint16_t* framebuffer = (uint16_t*) 0xB8000;
+    const char* error_message = "System Crash!";
+    size_t i = 0;
+    while (error_message[i] != '\\0') {
+        framebuffer[i] = (0x4F << 8) | error_message[i];
+        i++;
+    }
+    while (1); // Halt the system
+}
+
+## Makefile
+
+```make
+CFLAGS=-ffreestanding -nostdlib -m64
+LDFLAGS=-T linker.ld
+
+all: kernel iso
+
+kernel: kernel.o
+    x86_64-elf-gcc $(CFLAGS) -o kernel kernel.o $(LDFLAGS)
+
+kernel.o: kernel.c
+    x86_64-elf-gcc $(CFLAGS) -c kernel.c -o kernel.o
+
+iso: kernel
+    mkdir -p iso/boot/grub
+    cp kernel iso/boot/kernel
+    echo "set timeout=0" > iso/boot/grub/grub.cfg
+    echo "set default=0" >> iso/boot/grub/grub.cfg
+    echo "menuentry 'FloofOS' {" >> iso/boot/grub/grub.cfg
+    echo "    multiboot /boot/kernel" >> iso/boot/grub/grub.cfg
+    echo "}" >> iso/boot/grub/grub.cfg
+    grub-mkrescue -o floofos.iso iso/
+
+clean:
+    rm -f *.o kernel floofos.iso
+
+run:
+    qemu-system-x86_64 -kernel kernel
+
+linker.ld
+
+ENTRY(efi_main)
+SECTIONS
+{
+    . = 0x100000;
+    .text : { *(.text) }
+    .data : { *(.data) }
+    .bss : { *(.bss) }
+
