@@ -1,0 +1,19 @@
+Terminal Integration 
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void start_terminal() {
+    printf("Welcome to FloofOS Terminal\
+");
+    char command[256];
+    while (1) {
+        printf("floofos> ");
+        fgets(command, sizeof(command), stdin);
+        if (strncmp(command, "exit", 4) == 0) break;
+        system(command);
+    }
+}
+
+
